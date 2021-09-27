@@ -1,6 +1,8 @@
 
 # MagTag Solar Dashboard
 
+See [blog post](https://ryanseddon.com/hacking/solar-dashboard-adafruit-magtag/).
+
 A solar monitoring dashboard for your [Adafruit MagTag](https://www.adafruit.com/product/4800).
 
 ![Photo of my MagTag displaying my solar dashboard](/screenshot.webp?raw=true)
