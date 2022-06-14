@@ -8,12 +8,12 @@ from adafruit_magtag.magtag import MagTag
 import terminalio
 import displayio
 from adafruit_display_text import label
+import re
 
-# See readme.md for what's exepcted in your secrets file
 try:
     from secrets import secrets
 except ImportError:
-    print("Credentials and tokens are kept in secrets.py, please add them there!")
+    print("Credentials and tokens are kept in secrets.py, please add them there!!")
     raise
 
 # ----------------------------
@@ -29,17 +29,26 @@ IMPORTING_BMP = "/bmps/importing.bmp"
 # MagTag sometimes fails to find wifi network this let's us recover from that error
 # doesn't seem to work though I still get black screen panics where I need to
 # click the reset button, any ideas?
-try:
-    magtag = MagTag()
-    magtag.network.connect()
-except (ConnectionError, ValueError, RuntimeError) as e:
-    print("*** MagTag(), Some error occured, retrying! -", e)
-    # Exit program and restart in 1 seconds.
-    magtag.exit_and_deep_sleep(1)
+
+
+magtag = MagTag()
+print("Connecting and getting time")
+need_connect = True
+connect_tries = 01
+
+while need_connect:
+    try:
+        magtag.network.get_local_time()
+        need_connect = False
+    except (ValueError, RuntimeError) as e:
+        connect_tries += 1
+        print("Connect failed: Tries:{}".format(connect_tries))
+        print("Some error occurred, retrying after 1 minute! -", e)
+        time.sleep(10)
 
 r = rtc.RTC()
 
-#print(adafruit_datetime)
+# print(adafruit_datetime)
 
 # ----------------------------
 # Backgrounnd bitmap
@@ -56,6 +65,7 @@ importing_bmp, importing_pal = adafruit_imageload.load(IMPORTING_BMP)
 # ----------------------------
 icons_small_bmp, icons_small_pal = adafruit_imageload.load(ICONS_SMALL_FILE)
 
+
 def solar_generation_window():
     """Gets local time from Adafruit IO and converts to RFC3339 timestamp."""
     # Get local time from Adafruit IO
@@ -70,15 +80,27 @@ def solar_generation_window():
 
     return should_update
 
+
 def get_data():
     resp = magtag.network.fetch(secrets["gist"])
     d = resp.json()
     print(d)
-    return d["consumed"]/1000, d["generated"]/1000, d["diff"]/1000, d["sunrise"], d["sunset"], d["total"]["consumed"]/1000, d["total"]["generated"]/1000, d["total"]["exported"]/1000
+    return (
+        d["consumed"] / 1000,
+        d["generated"] / 1000,
+        d["diff"] / 1000,
+        d["sunrise"],
+        d["sunset"],
+        d["total"]["consumed"] / 1000,
+        d["total"]["generated"] / 1000,
+        d["total"]["exported"] / 1000,
+        d["t_stamp"],
+    )
+
 
 def battery_indicator(x=0, y=0):
 
-    voltage = round(magtag.peripherals.battery, 1);
+    voltage = round(magtag.peripherals.battery, 1)
     dt = 0
 
     print("Battery voltage: {:3.2f}v".format(voltage))
@@ -108,6 +130,7 @@ def battery_indicator(x=0, y=0):
     group.append(icon)
 
     return group
+
 
 # UI
 oversupply_icon = displayio.TileGrid(
@@ -187,55 +210,78 @@ stats_exported = label.Label(terminalio.FONT, text="Updating", color=0x000000)
 stats_exported.anchor_point = (0, 0.5)
 stats_exported.anchored_position = (229, 85)
 
-print("Fetching solar data...")
-consumed, generated, diff, sunrise, sunset, s_consumed, s_generated, s_exported = get_data()
+stats_tstamp = label.Label(terminalio.FONT, text="Updating", color=0x000000)
+stats_tstamp.anchor_point = (0, 0.5)
+stats_tstamp.anchored_position = (212, 117)
 
-solar_banner = displayio.Group()
-if diff > 0 and generated > 0:
-    # Solar is meeting house demand and exporting
-    solar_banner.append(oversupply_icon)
-elif diff == 0:
-    # Solar and demand match
-    solar_banner.append(matching_icon)
-elif diff < 0 and generated > 0:
-    # Solar is matching partial demand and pulling from grid
-    solar_banner.append(partial_icon)
-else:
-    solar_banner.append(importing_icon)
+try:
+    print("Fetching solar data...")
+    (
+        consumed,
+        generated,
+        diff,
+        sunrise,
+        sunset,
+        s_consumed,
+        s_generated,
+        s_exported,
+        t_stamp,
+    ) = get_data()
+    
+    regex = re.compile(" ")
+    tstamp = regex.split(t_stamp)[1]
 
-solar_banner.append(panel_power)
-solar_banner.append(house_power)
+    solar_banner = displayio.Group()
+    if diff > 0 and generated > 0:
+        # Solar is meeting house demand and exporting
+        solar_banner.append(oversupply_icon)
+    elif diff == 0:
+        # Solar and demand match
+        solar_banner.append(matching_icon)
+    elif diff < 0 and generated > 0:
+        # Solar is matching partial demand and pulling from grid
+        solar_banner.append(partial_icon)
+    else:
+        solar_banner.append(importing_icon)
 
-if diff < 0:
-    grid_power.anchored_position = (136, 74)
+    solar_banner.append(panel_power)
+    solar_banner.append(house_power)
 
-solar_banner.append(grid_power)
-solar_banner.append(today_sunrise)
-solar_banner.append(today_sunset)
-solar_banner.append(stats_consumed)
-solar_banner.append(stats_generated)
-solar_banner.append(stats_exported)
+    if diff < 0:
+        grid_power.anchored_position = (136, 74)
 
-magtag.splash.append(solar_banner)
-magtag.splash.append(battery_indicator(x=266, y=0))
+    solar_banner.append(grid_power)
+    solar_banner.append(today_sunrise)
+    solar_banner.append(today_sunset)
+    solar_banner.append(stats_consumed)
+    solar_banner.append(stats_generated)
+    solar_banner.append(stats_exported)
+    solar_banner.append(stats_tstamp)
 
-print("Should I update:", solar_generation_window())
+    magtag.splash.append(solar_banner)
+    magtag.splash.append(battery_indicator(x=266, y=0))
 
-# Update battery
-magtag.splash.append(battery_indicator(x=266, y=0))
+    print("Should I update:", solar_generation_window())
 
-panel_power.text = "{:3.3f}kW".format(generated)
-house_power.text = "{:3.3f}kW".format(consumed)
-grid_power.text = "{:3.3f}kW".format(diff)
-today_sunrise.text = sunrise
-today_sunset.text = sunset
+    # Update battery
+    magtag.splash.append(battery_indicator(x=266, y=0))
 
-# Stats
-stats_consumed.text = "{:3.1f}kWh".format(s_consumed)
-stats_generated.text = "{:3.1f}kWh".format(s_generated)
-stats_exported.text = "{:3.1f}kWh".format(s_exported)
+    panel_power.text = "{:3.3f}kW".format(generated)
+    house_power.text = "{:3.3f}kW".format(consumed)
+    grid_power.text = "{:3.3f}kW".format(diff)
+    today_sunrise.text = sunrise
+    today_sunset.text = sunset
 
-magtag.set_text(" ")
+    # Stats
+    stats_consumed.text = "{:3.1f}kWh".format(s_consumed)
+    stats_generated.text = "{:3.1f}kWh".format(s_generated)
+    stats_exported.text = "{:3.1f}kWh".format(s_exported)
+    stats_tstamp.text = tstamp
+
+    magtag.set_text(" ")
+except Exception as e:
+    print(e)
+
 sleep_time = 300 if solar_generation_window() else 46800
 
 # Create an alarm that will trigger 300 seconds (5 mins) from now or 10 hours if after 7pm.
