@@ -29,22 +29,13 @@ IMPORTING_BMP = "/bmps/importing.bmp"
 # MagTag sometimes fails to find wifi network this let's us recover from that error
 # doesn't seem to work though I still get black screen panics where I need to
 # click the reset button, any ideas?
-
-
-magtag = MagTag()
-print("Connecting and getting time")
-need_connect = True
-connect_tries = 01
-
-while need_connect:
-    try:
-        magtag.network.get_local_time()
-        need_connect = False
-    except (ValueError, RuntimeError) as e:
-        connect_tries += 1
-        print("Connect failed: Tries:{}".format(connect_tries))
-        print("Some error occurred, retrying after 1 minute! -", e)
-        time.sleep(10)
+try:
+    magtag = MagTag()
+    magtag.network.connect()
+except (ConnectionError, ValueError, RuntimeError) as e:
+    print("*** MagTag(), Some error occured, retrying! -", e)
+    # Exit program and restart in 1 seconds.
+    magtag.exit_and_deep_sleep(1)
 
 r = rtc.RTC()
 
