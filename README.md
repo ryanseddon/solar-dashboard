@@ -28,7 +28,8 @@ The program expects the json to have these properties when it requests the url p
         "exported": 54987.2575
     },
     "sunrise": "6:00AM",
-    "sunset": "6:21PM"
+    "sunset": "6:21PM",
+    "t_stamp": "2023-02-15 13:50:00"
 }
 ```
 
